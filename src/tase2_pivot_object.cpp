@@ -647,6 +647,16 @@ PivotDataObject::PivotDataObject (Datapoint* pivotData)
 
         switch (m_pivotCdc)
         {
+        case PivotCdc::INS:
+        case PivotCdc::ENS: {
+            Datapoint* stVal = getChild (cdc, "stVal");
+            if (stVal)
+            {
+                hasIntVal = true;
+                intVal = getValueInt (stVal);
+            }
+            break;
+        }
         case PivotCdc::SPS:
         case PivotCdc::SPC: {
             Datapoint* stVal = getChild (
@@ -703,42 +713,6 @@ PivotDataObject::PivotDataObject (Datapoint* pivotData)
             break;
         }
 
-        case PivotCdc::BSC: {
-            Datapoint* valWtr = getChild (cdc, "valWtr");
-            if (valWtr)
-            {
-                Datapoint* valWtrPosVal = getChild (valWtr, "posVal");
-                if (valWtrPosVal)
-                {
-                    intVal = getValueInt (valWtrPosVal);
-                }
-                Datapoint* valWtrTransInd = getChild (valWtr, "transInd");
-                if (valWtrTransInd)
-                {
-                    m_transient
-                        = static_cast<bool> (getValueInt (valWtrTransInd));
-                }
-            }
-            else
-            {
-                Datapoint* value = getChild (cdc, "ctlVal");
-                if (value)
-                {
-                    hasIntVal = true;
-                    string valStr = getValueStr (value);
-
-                    if (valStr == "stop")
-                        intVal = 0;
-                    else if (valStr == "lower")
-                        intVal = 1;
-                    else if (valStr == "higher")
-                        intVal = 2;
-                    else if (valStr == "reserved")
-                        intVal = 3;
-                }
-            }
-            break;
-        }
         case PivotCdc::ASG:
         case PivotCdc::ING:
         case PivotCdc::INC:
@@ -1040,6 +1014,46 @@ PivotDataObject::addQuality (const std::string& validity,
                              const std::string& cs, const std::string& nv)
 {
     Datapoint* q = addElement (m_cdc, "q");
+
+    bool abnormal = nv != "normal";
+
+    if (abnormal)
+    {
+        Datapoint* dq = addElement (q, "DetailQuality");
+        addElementWithValue (dq, "Failure", true);
+    }
+
+    if (cs == "telemetered" || cs == "calculated")
+    {
+        m_source = Source::PROCESS;
+        addElementWithValue (q, "Source", "process");
+    }
+    else if (cs == "entered" || cs == "estimated")
+    {
+        m_source = Source::SUBSTITUTED;
+        addElementWithValue (q, "Source", "substituted");
+    }
+
+    if (validity == "valid")
+    {
+        m_validity = Validity::GOOD;
+        addElementWithValue (q, "Validity", "good");
+    }
+    if (validity == "invalid")
+    {
+        m_validity = Validity::INVALID;
+        addElementWithValue (q, "Validity", "invalid");
+    }
+    if (validity == "held")
+    {
+        m_validity = Validity::RESERVED;
+        addElementWithValue (q, "Validity", "reserved");
+    }
+    if (validity == "suspect")
+    {
+        m_validity = Validity::QUESTIONABLE;
+        addElementWithValue (q, "Validity", "questionable");
+    }
 }
 
 void
@@ -1053,6 +1067,22 @@ PivotDataObject::addTimestamp (long ts, const std::string& tsValidity)
                          (long)m_timestamp->SecondSinceEpoch ());
     addElementWithValue (t, "FractionOfSecond",
                          (long)m_timestamp->FractionOfSecond ());
+
+    Datapoint* tmValidity = addElement (m_ln, "TmValidity");
+
+    if (tmValidity)
+    {
+        if (tsValidity == "invalid")
+        {
+            m_timestampInvalid = true;
+            addElementWithValue (tmValidity, "stVal", "invalid");
+        }
+        else
+        {
+            m_timestampInvalid = false;
+            addElementWithValue (tmValidity, "stVal", "good");
+        }
+    }
 }
 
 void
@@ -1108,15 +1138,34 @@ PivotDataObject::toTASE2DataObject (TASE2PivotDataPoint* exchangeConfig)
 
         if (getSource () == Source::SUBSTITUTED)
         {
-            addElementWithValue (dataObject, "do_quality_sb", (long)1);
+            addElementWithValue (dataObject, "do_cs", "estimated");
+        }
+        else if (getSource () == Source::PROCESS)
+        {
+            addElementWithValue (dataObject, "do_cs", "telemetered");
+        }
+
+        if (OldData () || Overflow () || OutOfRange () || BadReference ()
+            || Oscillatory () || Failure () || Inconsistent () || m_inacurate)
+        {
+            addElementWithValue (dataObject, "do_quality_normal_value",
+                                 "abnormal");
+        }
+
+        else
+        {
+            addElementWithValue (dataObject, "do_quality_normal_value",
+                                 "normal");
+        }
+
+        if (hasIntVal)
+        {
+            addElementWithValue (dataObject, "do_value", intVal);
         }
         else
         {
-            addElementWithValue (dataObject, "do_quality_sb", (long)0);
+            addElementWithValue (dataObject, "do_value", (double)floatVal);
         }
-
-        addElementWithValue (dataObject, "do_quality_nt",
-                             (long)(OldData () ? 1 : 0));
 
         if (m_timestamp)
         {

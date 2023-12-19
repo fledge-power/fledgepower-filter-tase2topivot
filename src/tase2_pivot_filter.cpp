@@ -245,23 +245,19 @@ TASE2PivotFilter::convertDataObjectToPivot (
             beforeLog.c_str (), dataObject.doType.c_str ());
     }
 
-    // NOTE: when doValue is missing it could be an ACK!
+    std::string pivotType = exchangeConfig->getPivotId ();
 
-    if (dataObject.doType == "M_SP_NA_1" || dataObject.doType == "M_SP_TB_1")
+    if (dataObject.doType == "State" || dataObject.doType == "StateQ"
+        || dataObject.doType == "StateQTime"
+        || dataObject.doType == "StateQTimeExt"
+        || dataObject.doType == "StateSupplemental"
+        || dataObject.doType == "StateSupplementalQ"
+        || dataObject.doType == "StateSupplementalQTime"
+        || dataObject.doType == "StateSupplementalQTimeExt")
     {
-        // Message structure checks
-        if (!attributeFound["do_value"])
-        {
-            if (!attributeFound["do_negative"])
-            {
-                TASE2PivotUtility::log_warn (
-                    "%s Missing attribute do_negative in SP ACK",
-                    beforeLog.c_str ());
-            }
-        }
 
         // Pivot conversion
-        PivotDataObject pivot ("GTIS", "SpsTyp");
+        PivotDataObject pivot ("GTIS", pivotType);
 
         pivot.setIdentifier (exchangeConfig->getPivotId ());
 
@@ -273,11 +269,44 @@ TASE2PivotFilter::convertDataObjectToPivot (
             {
                 int value = static_cast<int> (
                     dataObject.doValue->getData ().toInt ());
-                checkValueRange (beforeLog, value, 0, 1, "SP");
-                spsValue = (value > 0);
-            }
 
-            pivot.setStVal (spsValue);
+                if (pivotType == "SpsTyp")
+                {
+                    checkValueRange (beforeLog, value, 0, 1, "SP");
+                    spsValue = (value > 0);
+                    pivot.setStVal (spsValue);
+                }
+                else if (pivotType == "DpsTyp")
+                {
+                    int dpsValue = static_cast<int> (
+                        dataObject.doValue->getData ().toInt ());
+                    checkValueRange (beforeLog, dpsValue, 0, 3, "DP");
+
+                    if (dpsValue == 0)
+                    {
+                        pivot.setStValStr ("intermediate-state");
+                    }
+                    else if (dpsValue == 1)
+                    {
+                        pivot.setStValStr ("off");
+                    }
+                    else if (dpsValue == 2)
+                    {
+                        pivot.setStValStr ("on");
+                    }
+                    else
+                    {
+                        pivot.setStValStr ("bad-state");
+                    }
+                }
+                else
+                {
+                    TASE2PivotUtility::log_error (
+                        "Invalid Pivot Type %s, Original Type -> %s",
+                        pivotType.c_str (),
+                        exchangeConfig->getTypeId ().c_str ());
+                }
+            }
         }
 
         pivot.addQuality (dataObject.doValidity, dataObject.doCurrentSource,
@@ -288,51 +317,33 @@ TASE2PivotFilter::convertDataObjectToPivot (
 
         convertedDatapoint = pivot.toDatapoint ();
     }
-    else if (dataObject.doType == "M_DP_NA_1"
-             || dataObject.doType == "M_DP_TB_1")
+    else if (dataObject.doType == "Discrete"
+             || dataObject.doType == "DiscreteQ"
+             || dataObject.doType == "DiscreteQTime"
+             || dataObject.doType == "DiscreteQTimeExt")
     {
-        // Message structure checks
-        if (!attributeFound["do_value"])
-        {
-            if (!attributeFound["do_negative"])
-            {
-                TASE2PivotUtility::log_warn (
-                    "%s Missing attribute do_negative in DP ACK",
-                    beforeLog.c_str ());
-            }
-        }
 
         // Pivot conversion
-        PivotDataObject pivot ("GTIS", "DpsTyp");
+        PivotDataObject pivot ("GTIS", pivotType);
 
         pivot.setIdentifier (exchangeConfig->getPivotId ());
 
         if (attributeFound["do_value"] && dataObject.doValue != nullptr)
         {
-
+            if (pivotType != "InsTyp" && pivotType != "EnsTyp")
+            {
+                TASE2PivotUtility::log_error (
+                    "Invalid Pivot Type %s, Original Type -> %s",
+                    pivotType.c_str (), exchangeConfig->getTypeId ().c_str ());
+                return nullptr;
+            }
             if (dataObject.doValue->getData ().getType ()
                 == DatapointValue::T_INTEGER)
             {
-                int dpsValue = static_cast<int> (
+                int intValue = static_cast<int> (
                     dataObject.doValue->getData ().toInt ());
-                checkValueRange (beforeLog, dpsValue, 0, 3, "DP");
 
-                if (dpsValue == 0)
-                {
-                    pivot.setStValStr ("intermediate-state");
-                }
-                else if (dpsValue == 1)
-                {
-                    pivot.setStValStr ("off");
-                }
-                else if (dpsValue == 2)
-                {
-                    pivot.setStValStr ("on");
-                }
-                else
-                {
-                    pivot.setStValStr ("bad-state");
-                }
+                pivot.setStVal (intValue);
             }
         }
 
@@ -344,21 +355,10 @@ TASE2PivotFilter::convertDataObjectToPivot (
 
         convertedDatapoint = pivot.toDatapoint ();
     }
-    else if (dataObject.doType == "M_ME_NA_1"
-             || dataObject.doType
-                    == "M_ME_TD_1") /* normalized measured value */
+    else if (dataObject.doType == "Real" || dataObject.doType == "RealQ"
+             || dataObject.doType == "RealQTime"
+             || dataObject.doType == "RealQTimeExt")
     {
-        // Message structure checks
-        if (!attributeFound["do_value"])
-        {
-            if (!attributeFound["do_negative"])
-            {
-                TASE2PivotUtility::log_warn (
-                    "%s Missing attribute do_negative in ME normalized ACK",
-                    beforeLog.c_str ());
-            }
-        }
-
         // Pivot conversion
         PivotDataObject pivot ("GTIM", "MvTyp");
 
@@ -366,19 +366,17 @@ TASE2PivotFilter::convertDataObjectToPivot (
 
         if (attributeFound["do_value"] && dataObject.doValue != nullptr)
         {
-            if (dataObject.doValue->getData ().getType ()
-                == DatapointValue::T_INTEGER)
+            if (pivotType != "MvTyp")
             {
-                long value = dataObject.doValue->getData ().toInt ();
-                checkValueRange (beforeLog, value, -1L, 1L, "ME normalized");
-                pivot.setMagI (static_cast<int> (value));
+                TASE2PivotUtility::log_error (
+                    "Invalid Pivot Type %s, Original Type -> %s",
+                    pivotType.c_str (), exchangeConfig->getTypeId ().c_str ());
+                return nullptr;
             }
-            else if (dataObject.doValue->getData ().getType ()
-                     == DatapointValue::T_FLOAT)
+            if (dataObject.doValue->getData ().getType ()
+                == DatapointValue::T_FLOAT)
             {
                 double value = dataObject.doValue->getData ().toDouble ();
-                checkValueRange (beforeLog, value, -1.0, 32767.0 / 32768.0,
-                                 "ME normalized");
                 pivot.setMagF (static_cast<float> (value));
             }
         }
@@ -389,382 +387,6 @@ TASE2PivotFilter::convertDataObjectToPivot (
         appendTimestampDataObject (pivot, attributeFound["do_ts"],
                                    dataObject.doTs, dataObject.doTsValidity);
 
-        convertedDatapoint = pivot.toDatapoint ();
-    }
-    else if (dataObject.doType == "M_ME_NB_1"
-             || dataObject.doType == "M_ME_TE_1") /* scaled measured value */
-    {
-        // Message structure checks
-        if (!attributeFound["do_value"])
-        {
-            if (!attributeFound["do_negative"])
-            {
-                TASE2PivotUtility::log_warn (
-                    "%s Missing attribute do_negative in ME scaled ACK",
-                    beforeLog.c_str ());
-            }
-        }
-        if (dataObject.doType == "M_ME_TE_1")
-        {
-            if (!attributeFound["do_ts"])
-            {
-                TASE2PivotUtility::log_warn (
-                    "%s Missing attribute do_ts in ME scaled with timestamp",
-                    beforeLog.c_str ());
-            }
-            if (!attributeFound["do_ts_iv"])
-            {
-                TASE2PivotUtility::log_warn ("%s Missing attribute do_ts_iv "
-                                             "in ME scaled with timestamp",
-                                             beforeLog.c_str ());
-            }
-            if (!attributeFound["do_ts_su"])
-            {
-                TASE2PivotUtility::log_warn ("%s Missing attribute do_ts_su "
-                                             "in ME scaled with timestamp",
-                                             beforeLog.c_str ());
-            }
-            if (!attributeFound["do_ts_sub"])
-            {
-                TASE2PivotUtility::log_warn ("%s Missing attribute do_ts_sub "
-                                             "in ME scaled with timestamp",
-                                             beforeLog.c_str ());
-            }
-        }
-
-        // Pivot conversion
-        PivotDataObject pivot ("GTIM", "MvTyp");
-
-        pivot.setIdentifier (exchangeConfig->getPivotId ());
-
-        if (attributeFound["do_value"] && dataObject.doValue != nullptr)
-        {
-            if (dataObject.doValue->getData ().getType ()
-                == DatapointValue::T_INTEGER)
-            {
-                long value = dataObject.doValue->getData ().toInt ();
-                checkValueRange (beforeLog, value, -32768L, 32767L,
-                                 "ME scaled");
-                pivot.setMagI (static_cast<int> (value));
-            }
-            else if (dataObject.doValue->getData ().getType ()
-                     == DatapointValue::T_FLOAT)
-            {
-                double value = dataObject.doValue->getData ().toDouble ();
-                checkValueRange (beforeLog, value, -32768.0, 32767.0,
-                                 "ME scaled");
-                pivot.setMagF (static_cast<float> (value));
-            }
-        }
-
-        pivot.addQuality (dataObject.doValidity, dataObject.doCurrentSource,
-                          dataObject.doNormalValue);
-
-        appendTimestampDataObject (pivot, attributeFound["do_ts"],
-                                   dataObject.doTs, dataObject.doTsValidity);
-
-        convertedDatapoint = pivot.toDatapoint ();
-    }
-    else if (dataObject.doType == "M_ME_NC_1"
-             || dataObject.doType
-                    == "M_ME_TF_1") /* short (float) measured value */
-    {
-        // Message structure checks
-        if (!attributeFound["do_value"])
-        {
-            if (!attributeFound["do_negative"])
-            {
-                TASE2PivotUtility::log_warn (
-                    "%s Missing attribute do_negative in ME floating ACK",
-                    beforeLog.c_str ());
-            }
-        }
-
-        // Pivot conversion
-        PivotDataObject pivot ("GTIM", "MvTyp");
-
-        pivot.setIdentifier (exchangeConfig->getPivotId ());
-
-        if (attributeFound["do_value"] && dataObject.doValue != nullptr)
-        {
-            if (dataObject.doValue->getData ().getType ()
-                == DatapointValue::T_INTEGER)
-            {
-                long value = dataObject.doValue->getData ().toInt ();
-                float iValue = static_cast<int> (value);
-                if (static_cast<long> (iValue) != value)
-                {
-                    TASE2PivotUtility::log_warn (
-                        "%s do_value out of range (int) for ME floating: %f",
-                        beforeLog.c_str (), value);
-                }
-                pivot.setMagI (iValue);
-            }
-            else if (dataObject.doValue->getData ().getType ()
-                     == DatapointValue::T_FLOAT)
-            {
-                double value = dataObject.doValue->getData ().toDouble ();
-                float fValue = static_cast<float> (value);
-                if (static_cast<double> (fValue) != value)
-                {
-                    TASE2PivotUtility::log_warn (
-                        "%s do_value out of range (float) for ME floating: %f",
-                        beforeLog.c_str (), value);
-                }
-                pivot.setMagF (fValue);
-            }
-        }
-
-        pivot.addQuality (dataObject.doValidity, dataObject.doCurrentSource,
-                          dataObject.doNormalValue);
-
-        appendTimestampDataObject (pivot, attributeFound["do_ts"],
-                                   dataObject.doTs, dataObject.doTsValidity);
-
-        convertedDatapoint = pivot.toDatapoint ();
-    }
-    else if (dataObject.doType == "M_ST_NA_1"
-             || dataObject.doType == "M_ST_TB_1")
-    {
-        // Message structure checks
-        if (!attributeFound["do_value"])
-        {
-            if (!attributeFound["do_negative"])
-            {
-                TASE2PivotUtility::log_warn (
-                    "%s Missing attribute do_negative in ST ACK",
-                    beforeLog.c_str ());
-            }
-        }
-
-        // Pivot conversion
-        PivotDataObject pivot ("GTIM", "BscTyp");
-
-        pivot.setIdentifier (exchangeConfig->getPivotId ());
-
-        if (attributeFound["do_value"] && dataObject.doValue != nullptr)
-        {
-            if (dataObject.doValue->getData ().getType ()
-                == DatapointValue::T_STRING)
-            {
-                int wtrVal;
-                int transInd;
-                std::string str = dataObject.doValue->getData ().toString ();
-                std::string cleaned_str = str.substr (2, str.length () - 4);
-                std::size_t commaPos = cleaned_str.find (',');
-
-                if (commaPos != std::string::npos)
-                {
-                    std::string numStr = cleaned_str.substr (0, commaPos);
-                    std::string boolStr = cleaned_str.substr (commaPos + 1);
-                    int wtrVal = 0;
-                    try
-                    {
-                        wtrVal = std::stoi (numStr);
-                    }
-                    catch (const std::invalid_argument& e)
-                    {
-                        TASE2PivotUtility::log_warn (
-                            "%s Cannot convert value '%s' to integer: %s",
-                            beforeLog.c_str (), numStr.c_str (), e.what ());
-                    }
-                    catch (const std::out_of_range& e)
-                    {
-                        TASE2PivotUtility::log_warn (
-                            "%s Cannot convert value '%s' to integer: %s",
-                            beforeLog.c_str (), numStr.c_str (), e.what ());
-                    }
-                    checkValueRange (beforeLog, wtrVal, -64, 63, "ST");
-                    bool transInd = (boolStr == "true");
-                }
-            }
-        }
-
-        pivot.addQuality (dataObject.doValidity, dataObject.doCurrentSource,
-                          dataObject.doNormalValue);
-
-        appendTimestampDataObject (pivot, attributeFound["do_ts"],
-                                   dataObject.doTs, dataObject.doTsValidity);
-
-        convertedDatapoint = pivot.toDatapoint ();
-    }
-    else if (dataObject.doType == "C_SC_NA_1"
-             || dataObject.doType == "C_SC_TA_1")
-    {
-        // Pivot conversion
-        PivotDataObject pivot ("GTIC", "SpcTyp");
-
-        pivot.setIdentifier (exchangeConfig->getPivotId ());
-
-        appendTimestampDataObject (pivot, attributeFound["do_ts"],
-                                   dataObject.doTs, dataObject.doTsValidity);
-
-        if (attributeFound["do_value"] && dataObject.doValue != nullptr)
-        {
-            bool spsValue = false;
-            if (dataObject.doValue->getData ().getType ()
-                == DatapointValue::T_INTEGER)
-            {
-                int value = static_cast<int> (
-                    dataObject.doValue->getData ().toInt ());
-                checkValueRange (beforeLog, value, 0, 1, "SC");
-                spsValue = (value > 0);
-            }
-
-            pivot.setCtlValBool (spsValue);
-        }
-
-        appendTimestampDataObject (pivot, attributeFound["do_ts"],
-                                   dataObject.doTs, dataObject.doTsValidity);
-        convertedDatapoint = pivot.toDatapoint ();
-    }
-    else if (dataObject.doType == "C_DC_NA_1"
-             || dataObject.doType == "C_DC_TA_1")
-    {
-        // Pivot conversion
-        PivotDataObject pivot ("GTIC", "DpcTyp");
-
-        pivot.setIdentifier (exchangeConfig->getPivotId ());
-
-        appendTimestampDataObject (pivot, attributeFound["do_ts"],
-                                   dataObject.doTs, dataObject.doTsValidity);
-
-        if (attributeFound["do_value"] && dataObject.doValue != nullptr)
-        {
-
-            if (dataObject.doValue->getData ().getType ()
-                == DatapointValue::T_INTEGER)
-            {
-                int dpsValue = static_cast<int> (
-                    dataObject.doValue->getData ().toInt ());
-                checkValueRange (beforeLog, dpsValue, 0, 3, "DC");
-
-                if (dpsValue == 0)
-                {
-                    pivot.setCtlValStr ("intermediate-state");
-                }
-                else if (dpsValue == 1)
-                {
-                    pivot.setCtlValStr ("off");
-                }
-                else if (dpsValue == 2)
-                {
-                    pivot.setCtlValStr ("on");
-                }
-                else
-                {
-                    pivot.setCtlValStr ("bad-state");
-                }
-            }
-        }
-
-        appendTimestampDataObject (pivot, attributeFound["do_ts"],
-                                   dataObject.doTs, dataObject.doTsValidity);
-        convertedDatapoint = pivot.toDatapoint ();
-    }
-
-    else if (dataObject.doType == "C_SE_NA_1"
-             || dataObject.doType == "C_SE_TA_1"
-             || dataObject.doType == "C_SE_NC_1"
-             || dataObject.doType == "C_SE_TC_1")
-    {
-        // Pivot conversion
-        PivotDataObject pivot ("GTIC", "ApcTyp");
-
-        pivot.setIdentifier (exchangeConfig->getPivotId ());
-
-        appendTimestampDataObject (pivot, attributeFound["do_ts"],
-                                   dataObject.doTs, dataObject.doTsValidity);
-
-        if (attributeFound["do_value"] && dataObject.doValue != nullptr)
-        {
-            double value = dataObject.doValue->getData ().toDouble ();
-            float fValue = static_cast<float> (value);
-            if (dataObject.doType == "C_SE_NA_1"
-                || dataObject.doType == "C_SE_TA_1")
-            {
-                checkValueRange (beforeLog, value, -1.0, 32767.0 / 32768.0,
-                                 "SE normalized");
-            }
-            else if (dataObject.doType == "C_SE_NC_1"
-                     || dataObject.doType == "C_SE_TC_1")
-            {
-                if (static_cast<double> (fValue) != value)
-                {
-                    TASE2PivotUtility::log_warn (
-                        "%s do_value out of range (float) for SE floating: %f",
-                        beforeLog.c_str (), value);
-                }
-            }
-            pivot.setCtlValF (fValue);
-        }
-
-        appendTimestampDataObject (pivot, attributeFound["do_ts"],
-                                   dataObject.doTs, dataObject.doTsValidity);
-        convertedDatapoint = pivot.toDatapoint ();
-    }
-    else if (dataObject.doType == "C_SE_NB_1"
-             || dataObject.doType == "C_SE_TB_1")
-    {
-        // Pivot conversion
-        PivotDataObject pivot ("GTIC", "IncTyp");
-
-        pivot.setIdentifier (exchangeConfig->getPivotId ());
-
-        appendTimestampDataObject (pivot, attributeFound["do_ts"],
-                                   dataObject.doTs, dataObject.doTsValidity);
-
-        if (attributeFound["do_value"] && dataObject.doValue != nullptr)
-        {
-            long value = dataObject.doValue->getData ().toInt ();
-            checkValueRange (beforeLog, value, -64L, 63L, "SE scaled");
-            pivot.setCtlValI (static_cast<int> (value));
-        }
-
-        appendTimestampDataObject (pivot, attributeFound["do_ts"],
-                                   dataObject.doTs, dataObject.doTsValidity);
-        convertedDatapoint = pivot.toDatapoint ();
-    }
-    else if (dataObject.doType == "C_RC_NA_1"
-             || dataObject.doType == "C_RC_TA_1")
-    {
-        // Pivot conversion
-        PivotDataObject pivot ("GTIC", "BscTyp");
-
-        pivot.setIdentifier (exchangeConfig->getPivotId ());
-
-        appendTimestampDataObject (pivot, attributeFound["do_ts"],
-                                   dataObject.doTs, dataObject.doTsValidity);
-
-        if (attributeFound["do_value"] && dataObject.doValue != nullptr)
-        {
-            int ctlValue = dataObject.doValue->getData ().toInt ();
-            checkValueRange (beforeLog, ctlValue, 0, 3, "RC");
-            switch (ctlValue)
-            {
-            case 0:
-                pivot.setCtlValStr ("stop");
-                break;
-            case 1:
-                pivot.setCtlValStr ("lower");
-                break;
-            case 2:
-                pivot.setCtlValStr ("higher");
-                break;
-            case 3:
-                pivot.setCtlValStr ("reserved");
-                break;
-            default:
-                TASE2PivotUtility::log_warn (
-                    "%s Invalid step command response value: %s",
-                    beforeLog.c_str (),
-                    (exchangeConfig->getPivotId ()).c_str ());
-                break;
-            }
-        }
-
-        appendTimestampDataObject (pivot, attributeFound["do_ts"],
-                                   dataObject.doTs, dataObject.doTsValidity);
         convertedDatapoint = pivot.toDatapoint ();
     }
     else

@@ -104,6 +104,8 @@ class PivotObject
         APC,
         ASG,
         ING,
+        INS,
+        ENS,
         BSC
     } PivotCdc;
 
