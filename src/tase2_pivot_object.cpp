@@ -17,7 +17,7 @@
 #include "tase2_pivot_utility.hpp"
 
 static Datapoint*
-createDp (const string& name)
+createDp (const std::string& name)
 {
     vector<Datapoint*>* datapoints = new vector<Datapoint*>;
 
@@ -30,7 +30,7 @@ createDp (const string& name)
 
 template <class T>
 static Datapoint*
-createDpWithValue (const string& name, const T value)
+createDpWithValue (const std::string& name, const T value)
 {
     DatapointValue dpv (value);
 
@@ -40,7 +40,7 @@ createDpWithValue (const string& name, const T value)
 }
 
 static Datapoint*
-addElement (Datapoint* dp, const string& name)
+addElement (Datapoint* dp, const std::string& name)
 {
     DatapointValue& dpv = dp->getData ();
 
@@ -58,7 +58,7 @@ addElement (Datapoint* dp, const string& name)
 
 template <class T>
 static Datapoint*
-addElementWithValue (Datapoint* dp, const string& name, const T value)
+addElementWithValue (Datapoint* dp, const std::string& name, const T value)
 {
     DatapointValue& dpv = dp->getData ();
 
@@ -75,7 +75,7 @@ addElementWithValue (Datapoint* dp, const string& name, const T value)
 }
 
 static Datapoint*
-getChild (Datapoint* dp, const string& name)
+getChild (Datapoint* dp, const std::string& name)
 {
     Datapoint* childDp = nullptr;
 
@@ -115,7 +115,7 @@ getValueStr (Datapoint* dp)
 }
 
 static const string
-getChildValueStr (Datapoint* dp, const string& name)
+getChildValueStr (Datapoint* dp, const std::string& name)
 {
     Datapoint* childDp = getChild (dp, name);
 
@@ -146,7 +146,7 @@ getValueInt (Datapoint* dp)
 }
 
 static int
-getChildValueInt (Datapoint* dp, const string& name)
+getChildValueInt (Datapoint* dp, const std::string& name)
 {
     Datapoint* childDp = getChild (dp, name);
 
@@ -746,8 +746,8 @@ PivotDataObject::~PivotDataObject ()
         delete m_timestamp;
 }
 
-PivotDataObject::PivotDataObject (const string& pivotLN,
-                                  const string& valueType)
+PivotDataObject::PivotDataObject (const std::string& pivotLN,
+                                  const std::string& valueType)
 {
     m_dp = createDp ("PIVOT");
 
@@ -764,8 +764,8 @@ PivotOperationObject::~PivotOperationObject ()
         delete m_timestamp;
 }
 
-PivotOperationObject::PivotOperationObject (const string& pivotLN,
-                                            const string& valueType)
+PivotOperationObject::PivotOperationObject (const std::string& pivotLN,
+                                            const std::string& valueType)
 {
     m_dp = createDp ("PIVOT");
 
@@ -929,7 +929,7 @@ PivotOperationObject::PivotOperationObject (Datapoint* pivotData)
 }
 
 void
-PivotObject::setIdentifier (const string& identifier)
+PivotObject::setIdentifier (const std::string& identifier)
 {
     addElementWithValue (m_ln, "Identifier", identifier);
 }
@@ -1015,12 +1015,12 @@ PivotDataObject::addQuality (const std::string& validity,
 {
     Datapoint* q = addElement (m_cdc, "q");
 
-    bool abnormal = nv != "normal";
+    bool abnormal = nv != "" && nv != "normal";
 
     if (abnormal)
     {
         Datapoint* dq = addElement (q, "DetailQuality");
-        addElementWithValue (dq, "Failure", true);
+        addElementWithValue (dq, "Failure", (long)true);
     }
 
     if (cs == "telemetered" || cs == "calculated")
@@ -1034,7 +1034,7 @@ PivotDataObject::addQuality (const std::string& validity,
         addElementWithValue (q, "Source", "substituted");
     }
 
-    if (validity == "valid")
+    if (validity == "valid" || validity == "")
     {
         m_validity = Validity::GOOD;
         addElementWithValue (q, "Validity", "good");
@@ -1112,6 +1112,9 @@ PivotDataObject::toTASE2DataObject (TASE2PivotDataPoint* exchangeConfig)
         addElementWithValue (dataObject, "do_name",
                              (exchangeConfig->getName ()));
 
+        bool isQualityType
+            = exchangeConfig->getTypeId ().find ("Q") != std::string::npos;
+
         std::string validity;
 
         switch (getValidity ())
@@ -1134,28 +1137,32 @@ PivotDataObject::toTASE2DataObject (TASE2PivotDataPoint* exchangeConfig)
         }
         }
 
-        addElementWithValue (dataObject, "do_validity", validity);
+        if (isQualityType)
+        {
+            addElementWithValue (dataObject, "do_validity", validity);
 
-        if (getSource () == Source::SUBSTITUTED)
-        {
-            addElementWithValue (dataObject, "do_cs", "estimated");
-        }
-        else if (getSource () == Source::PROCESS)
-        {
-            addElementWithValue (dataObject, "do_cs", "telemetered");
-        }
+            if (getSource () == Source::SUBSTITUTED)
+            {
+                addElementWithValue (dataObject, "do_cs", "estimated");
+            }
+            else if (getSource () == Source::PROCESS)
+            {
+                addElementWithValue (dataObject, "do_cs", "telemetered");
+            }
 
-        if (OldData () || Overflow () || OutOfRange () || BadReference ()
-            || Oscillatory () || Failure () || Inconsistent () || m_inacurate)
-        {
-            addElementWithValue (dataObject, "do_quality_normal_value",
-                                 "abnormal");
-        }
+            if (OldData () || Overflow () || OutOfRange () || BadReference ()
+                || Oscillatory () || Failure () || Inconsistent ()
+                || m_inacurate)
+            {
+                addElementWithValue (dataObject, "do_quality_normal_value",
+                                     "abnormal");
+            }
 
-        else
-        {
-            addElementWithValue (dataObject, "do_quality_normal_value",
-                                 "normal");
+            else
+            {
+                addElementWithValue (dataObject, "do_quality_normal_value",
+                                     "normal");
+            }
         }
 
         if (hasIntVal)
@@ -1205,6 +1212,7 @@ PivotOperationObject::toTASE2OperationObject (
 
     Datapoint* scope = createDpWithValue (
         "co_scope", exchangeConfig->getDomain () == "vcc" ? "vcc" : "domain");
+    commandObject.push_back (scope);
 
     Datapoint* domain
         = createDpWithValue ("co_domain", exchangeConfig->getDomain ());
@@ -1230,7 +1238,7 @@ PivotOperationObject::toTASE2OperationObject (
     Datapoint* value = nullptr;
 
     if (hasIntVal)
-        value = createDpWithValue ("co_value", (long)intVal);
+        value = createDpWithValue ("co_value", intVal);
     else
         value = createDpWithValue ("co_value", (double)floatVal);
 

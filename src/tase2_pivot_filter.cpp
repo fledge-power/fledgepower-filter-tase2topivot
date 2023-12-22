@@ -245,17 +245,15 @@ TASE2PivotFilter::convertDataObjectToPivot (
             beforeLog.c_str (), dataObject.doType.c_str ());
     }
 
-    std::string pivotType = exchangeConfig->getPivotId ();
+    std::string pivotType = exchangeConfig->getPivotType ();
 
     if (dataObject.doType == "State" || dataObject.doType == "StateQ"
         || dataObject.doType == "StateQTime"
         || dataObject.doType == "StateQTimeExt"
-        || dataObject.doType == "StateSupplemental"
-        || dataObject.doType == "StateSupplementalQ"
-        || dataObject.doType == "StateSupplementalQTime"
-        || dataObject.doType == "StateSupplementalQTimeExt")
+        || dataObject.doType == "StateSup" || dataObject.doType == "StateSupQ"
+        || dataObject.doType == "StateSupQTime"
+        || dataObject.doType == "StateSupQTimeExt")
     {
-
         // Pivot conversion
         PivotDataObject pivot ("GTIS", pivotType);
 
@@ -278,7 +276,7 @@ TASE2PivotFilter::convertDataObjectToPivot (
                 }
                 else if (pivotType == "DpsTyp")
                 {
-                    int dpsValue = static_cast<int> (
+                    auto dpsValue = static_cast<int> (
                         dataObject.doValue->getData ().toInt ());
                     checkValueRange (beforeLog, dpsValue, 0, 3, "DP");
 
@@ -309,8 +307,12 @@ TASE2PivotFilter::convertDataObjectToPivot (
             }
         }
 
-        pivot.addQuality (dataObject.doValidity, dataObject.doCurrentSource,
-                          dataObject.doNormalValue);
+        if (dataObject.doType != "State" && dataObject.doType != "StateSup")
+        {
+            pivot.addQuality (dataObject.doValidity,
+                              dataObject.doCurrentSource,
+                              dataObject.doNormalValue);
+        }
 
         appendTimestampDataObject (pivot, attributeFound["do_ts"],
                                    dataObject.doTs, dataObject.doTsValidity);
@@ -322,15 +324,16 @@ TASE2PivotFilter::convertDataObjectToPivot (
              || dataObject.doType == "DiscreteQTime"
              || dataObject.doType == "DiscreteQTimeExt")
     {
-
+        std::string root = pivotType == "MvTyp" ? "GTIM" : "GTIS";
         // Pivot conversion
-        PivotDataObject pivot ("GTIS", pivotType);
+        PivotDataObject pivot (root, pivotType);
 
         pivot.setIdentifier (exchangeConfig->getPivotId ());
 
         if (attributeFound["do_value"] && dataObject.doValue != nullptr)
         {
-            if (pivotType != "InsTyp" && pivotType != "EnsTyp")
+            if (pivotType != "InsTyp" && pivotType != "EnsTyp"
+                && pivotType != "MvTyp")
             {
                 TASE2PivotUtility::log_error (
                     "Invalid Pivot Type %s, Original Type -> %s",
@@ -340,15 +343,26 @@ TASE2PivotFilter::convertDataObjectToPivot (
             if (dataObject.doValue->getData ().getType ()
                 == DatapointValue::T_INTEGER)
             {
-                int intValue = static_cast<int> (
+                auto intValue = static_cast<int> (
                     dataObject.doValue->getData ().toInt ());
 
-                pivot.setStVal (intValue);
+                if (pivotType == "InsTyp" || pivotType == "EnsTyp")
+                {
+                    pivot.setStVal (intValue);
+                }
+                else if (pivotType == "MvTyp")
+                {
+                    pivot.setMagI (intValue);
+                }
             }
         }
 
-        pivot.addQuality (dataObject.doValidity, dataObject.doCurrentSource,
-                          dataObject.doNormalValue);
+        if (dataObject.doType != "Discrete")
+        {
+            pivot.addQuality (dataObject.doValidity,
+                              dataObject.doCurrentSource,
+                              dataObject.doNormalValue);
+        }
 
         appendTimestampDataObject (pivot, attributeFound["do_ts"],
                                    dataObject.doTs, dataObject.doTsValidity);
@@ -381,8 +395,12 @@ TASE2PivotFilter::convertDataObjectToPivot (
             }
         }
 
-        pivot.addQuality (dataObject.doValidity, dataObject.doCurrentSource,
-                          dataObject.doNormalValue);
+        if (dataObject.doType != "Real")
+        {
+            pivot.addQuality (dataObject.doValidity,
+                              dataObject.doCurrentSource,
+                              dataObject.doNormalValue);
+        }
 
         appendTimestampDataObject (pivot, attributeFound["do_ts"],
                                    dataObject.doTs, dataObject.doTsValidity);
@@ -487,7 +505,8 @@ TASE2PivotFilter::convertOperationObjectToPivot (
         return nullptr;
     }
 
-    if (commandObject.comingFromValue != "tase2")
+    if (attributeFound["co_comingfrom"]
+        && commandObject.comingFromValue != "tase2")
     {
         TASE2PivotUtility::log_warn (
             "%s data_object for %s is not from TASE.2 plugin -> ignore",

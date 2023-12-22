@@ -109,7 +109,7 @@ class PivotObject
         BSC
     } PivotCdc;
 
-    void setIdentifier (const string& identifier);
+    void setIdentifier (const std::string& identifier);
     void setCause (int cause);
     void setConfirmation (bool value);
     void setTest (bool value);
@@ -190,7 +190,7 @@ class PivotDataObject : public PivotObject
     } Source;
 
     PivotDataObject (Datapoint* pivotData);
-    PivotDataObject (const string& pivotLN, const string& valueType);
+    PivotDataObject (const std::string& pivotLN, const std::string& valueType);
     ~PivotDataObject ();
 
     void setStVal (bool value);
@@ -301,7 +301,8 @@ class PivotOperationObject : public PivotObject
 {
   public:
     PivotOperationObject (Datapoint* pivotData);
-    PivotOperationObject (const string& pivotLN, const string& valueType);
+    PivotOperationObject (const std::string& pivotLN,
+                          const std::string& valueType);
     ~PivotOperationObject ();
 
     void setSelect (int select);
