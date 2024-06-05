@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 
 # Set the plugin name to build
-project(tase2_pivot_filter)
+project(tase2topivot)
 
 # Supported options:
 # -DFLEDGE_INCLUDE
